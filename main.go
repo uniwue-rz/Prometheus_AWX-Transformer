@@ -184,7 +184,8 @@ func getHostVariables(config Config, host Host) map[string]interface{} {
 	if err != nil {
 		log.Fatal("There was an error decoding the results", err)
 	}
-	return vars
+	unpackedVars := unpackVariables(vars)
+	return unpackedVars
 }
 
 /// getGroupVariables Returns the group variables for the
@@ -202,7 +203,40 @@ func getGroupVariables(config Config, group Group) map[string]interface{} {
 	if err != nil {
 		log.Fatal("There was an error decoding the results", err)
 	}
-	return vars
+	unpackedVars := unpackVariables(vars)
+	return unpackedVars
+}
+
+/// unpack variables from
+func unpackVariables(vars map[string]interface{}) map[string]interface{} {
+	var unwrap func(v interface{}) interface{}
+	unwrap = func(v interface{}) interface{} {
+		switch t := v.(type) {
+		case map[string]interface{}:
+			if val, ok := t["__ansible_unsafe"]; ok && len(t) == 1 {
+				return unwrap(val)
+			}
+			m := make(map[string]interface{}, len(t))
+			for k, vv := range t {
+				m[k] = unwrap(vv)
+			}
+			return m
+		case []interface{}:
+			arr := make([]interface{}, len(t))
+			for i, vv := range t {
+				arr[i] = unwrap(vv)
+			}
+			return arr
+		default:
+			return v
+		}
+	}
+
+	cleaned := make(map[string]interface{}, len(vars))
+	for k, v := range vars {
+		cleaned[k] = unwrap(v)
+	}
+	return cleaned
 }
 
 ///createPrometheusHosts Creates the host nodes that can be directly extracted as prometheus configurations
