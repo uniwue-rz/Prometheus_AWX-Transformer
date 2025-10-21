@@ -1,0 +1,69 @@
+name: Build and publish release
+
+on:
+  push:
+
+jobs:
+  ee-build:
+    runs-on: ubuntu-latest
+    steps:
+
+      # create workspace
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # install environment
+
+      - name: Install go
+        uses: actions/setup-go@v3
+        with:
+          go-version-file: 'go.mod'
+
+      # build
+
+      - name: Build source
+        run: |
+          bash ./go_build.sh
+      
+      # publish
+
+      - name: Publish release
+        uses: akkuman/gitea-release-action@v1
+        with:
+          body: |-
+            This release contains the latest version of the Prometheus AWX-Transformer.
+            It is automatically built from the latest commit on the main branch.
+          files: |-
+            *.run
+          sha256sum: true
+
+      # notify pusher about failures
+      # workaround until https://github.com/go-gitea/gitea/issues/23725 is implemented natively
+      
+      - name: Get real email of pusher
+        if: failure()
+        env:
+          API_URL: "${{ github.api_url }}"
+          USERNAME: ${{ gitea.event.pusher.username }}
+          GITEA_TOKEN: ${{ secrets.CICD_USER_READ }}
+        run: |
+          RESPONSE=$(curl -s -H "Authorization: token $GITEA_TOKEN" \
+            "$API_URL/users/$USERNAME")
+          EMAIL=$(echo "$RESPONSE" | jq -r .email)
+
+          echo "PUSHER_EMAIL=$EMAIL" >> $GITHUB_ENV
+
+      - name: Send failure mail
+        if: failure()
+        uses: https://github.com/dawidd6/action-send-mail@v6
+        with:
+          server_address: "mailmaster.uni-wuerzburg.de"
+          to: "${{ env.PUSHER_EMAIL }}"
+          from: "RZ AppGit <rz-appgit@uni-wuerzburg.de>"
+          subject: "[AppGit] ${{ gitea.repository }} ${{gitea.workflow}} ${{ job.status }}"
+          convert_markdown: true
+          html_body: |
+            ### Job ${{ job.status }}
+
+            ${{ gitea.repository }}: [${{ gitea.ref }}@${{ gitea.sha }}](${{ gitea.server_url }}/${{ gitea.repository }}/actions/runs/${{ gitea.run_number }})
