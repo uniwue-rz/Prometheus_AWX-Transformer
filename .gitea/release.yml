@@ -1,7 +1,6 @@
 name: Build and publish release
 
-on:
-  push:
+on: push
 
 jobs:
   ee-build:
